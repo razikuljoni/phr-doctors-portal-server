@@ -2,6 +2,7 @@ const express = require("express");
 const cors = require("cors");
 const { MongoClient, ServerApiVersion } = require("mongodb");
 require("dotenv").config();
+const jwt = require("jsonwebtoken");
 
 const port = process.env.PORT || 8000;
 
@@ -16,6 +17,22 @@ const client = new MongoClient(uri, {
     useUnifiedTopology: true,
     serverApi: ServerApiVersion.v1,
 });
+
+const verifyJWT = (req, res, next) => {
+    const authHeader = req.headers.authorization;
+    if (!authHeader) {
+        return res.status(401).send({ message: "UnAuthorized Access" });
+    }
+    const token = authHeader.split(" ")[1];
+    jwt.verify(token, process.env.ACCESS_TOKEN_SECRET, function (err, decoded) {
+        if (err) {
+            return res.status(403).send({ message: "Forbidden Access" });
+        }
+        req.decoded = decoded;
+        next();
+    });
+};
+
 async function run() {
     try {
         // await client.connect();
@@ -25,6 +42,9 @@ async function run() {
         const bookingCollection = client
             .db("doctors-portal-2022")
             .collection("bookings");
+        const userCollection = client
+            .db("doctors-portal-2022")
+            .collection("users");
         console.log("DB Connected");
 
         //Get all services
@@ -35,6 +55,62 @@ async function run() {
             res.send(services);
         });
 
+        //get all users
+        app.get("/user", verifyJWT, async (req, res) => {
+            const result = await userCollection.find().toArray();
+            res.send(result);
+        });
+
+        //find admin or not
+        app.get('/admin/:email', async (req, res) =>{
+            const email = req.params.email;
+            const user = await userCollection.findOne({email})
+            const isAdmin = user.role === "Admin";
+            res.send({admin: isAdmin});
+        });
+
+        //make admin
+        app.put("/user/admin/:email", verifyJWT, async (req, res) => {
+            const email = req.params.email;
+            const requester = req.decoded.email;
+            const requesterAccount = await userCollection.findOne({
+                email: requester,
+            });
+            if (requesterAccount.role === "Admin") {
+                const filter = { email };
+                const updatedDoc = {
+                    $set: { role: "Admin" },
+                };
+                const result = await userCollection.updateOne(
+                    filter,
+                    updatedDoc
+                );
+                res.send(result);
+            } else {
+                return res.status(403).send({ message: "Forbidden Access" });
+            }
+        });
+
+        //update a user
+        app.put("/user/:email", async (req, res) => {
+            const email = req.params.email;
+            const user = req.body;
+            const filter = { email };
+            const options = { upsert: true };
+            const updatedDoc = {
+                $set: user,
+            };
+            const result = await userCollection.updateOne(
+                filter,
+                updatedDoc,
+                options
+            );
+            const token = jwt.sign({ email }, process.env.ACCESS_TOKEN_SECRET, {
+                expiresIn: "1h",
+            });
+            res.send({ result, token });
+        });
+        
         //get available slots
         app.get("/available", async (req, res) => {
             const date = req.query.date;
@@ -62,12 +138,18 @@ async function run() {
             res.send(services);
         });
 
-        //get all bookings of an user 
-        app.get("/booking", async (req, res) => {
-            const patientEmail = req.query.patientEmail;
-            const query = {patientEmail};
-            const bookings = await bookingCollection.find(query).toArray();
-            res.send(bookings);
+        //get all bookings of an user
+        app.get("/booking", verifyJWT, async (req, res) => {
+            const patientEmail = req?.query?.patientEmail;
+            const decodedEmail = req?.decoded?.email;
+            console.log(patientEmail === decodedEmail);
+            if (patientEmail) {
+                const query = { patientEmail };
+                const bookings = await bookingCollection.find(query).toArray();
+                res.send(bookings);
+            } else {
+                return res.status(403).send({ message: "Forbidden Access" });
+            }
         });
 
         //Add a new booking
