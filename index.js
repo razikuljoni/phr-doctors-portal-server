@@ -11,7 +11,7 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-const uri = `mongodb+srv://admin:admin@cluster0.ktfxl.mongodb.net/?retryWrites=true&w=majority`;
+const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASSWORD}@cluster0.ktfxl.mongodb.net/?retryWrites=true&w=majority`;
 const client = new MongoClient(uri, {
     useNewUrlParser: true,
     useUnifiedTopology: true,
@@ -45,12 +45,28 @@ async function run() {
         const userCollection = client
             .db("doctors-portal-2022")
             .collection("users");
+        const doctorCollection = client
+            .db("doctors-portal-2022")
+            .collection("doctors");
         console.log("DB Connected");
+
+        //verify admin or not
+        const verifyAdmin = async (req, res, next) => {
+            const requester = req.decoded.email;
+            const requesterAccount = await userCollection.findOne({
+                email: requester,
+            });
+            if (requesterAccount.role === "Admin") {
+                next();
+            } else {
+                return res.status(403).send({ message: "Forbidden Access" });
+            }
+        };
 
         //Get all services
         app.get("/service", async (req, res) => {
             const query = {};
-            const cursor = serviceCollection.find(query);
+            const cursor = serviceCollection.find(query).project({ name: 1 });
             const services = await cursor.toArray();
             res.send(services);
         });
@@ -62,34 +78,44 @@ async function run() {
         });
 
         //find admin or not
-        app.get('/admin/:email', async (req, res) =>{
+        app.get("/admin/:email", async (req, res) => {
             const email = req.params.email;
-            const user = await userCollection.findOne({email})
+            const user = await userCollection.findOne({ email });
             const isAdmin = user.role === "Admin";
-            res.send({admin: isAdmin});
+            res.send({ admin: isAdmin });
         });
 
         //make admin
-        app.put("/user/admin/:email", verifyJWT, async (req, res) => {
-            const email = req.params.email;
-            const requester = req.decoded.email;
-            const requesterAccount = await userCollection.findOne({
-                email: requester,
-            });
-            if (requesterAccount.role === "Admin") {
+        app.put(
+            "/user/admin/:email",
+            verifyJWT,
+            verifyAdmin,
+            async (req, res) => {
+                const email = req.params.email;
                 const filter = { email };
+                const exists = await userCollection.findOne(filter);
+                console.log(exists);
+                // if () {
+                //     const updatedDoc = {
+                //         $set: { role: "Admin" },
+                //     };
+                //     const result = await userCollection.updateOne(
+                //         filter,
+                //         updatedDoc
+                //     );
+                //     res.send(result);
+                // } else if () {
                 const updatedDoc = {
-                    $set: { role: "Admin" },
+                    $set: { role: "User" },
                 };
                 const result = await userCollection.updateOne(
                     filter,
                     updatedDoc
                 );
                 res.send(result);
-            } else {
-                return res.status(403).send({ message: "Forbidden Access" });
+                // }
             }
-        });
+        );
 
         //update a user
         app.put("/user/:email", async (req, res) => {
@@ -110,7 +136,20 @@ async function run() {
             });
             res.send({ result, token });
         });
-        
+
+        //delete a user
+        app.delete(
+            "/user/admin/:email",
+            verifyJWT,
+            verifyAdmin,
+            async (req, res) => {
+                const email = req.params.email;
+                const filter = { email };
+                const result = await userCollection.deleteOne(filter);
+                res.send(result);
+            }
+        );
+
         //get available slots
         app.get("/available", async (req, res) => {
             const date = req.query.date;
@@ -142,7 +181,6 @@ async function run() {
         app.get("/booking", verifyJWT, async (req, res) => {
             const patientEmail = req?.query?.patientEmail;
             const decodedEmail = req?.decoded?.email;
-            console.log(patientEmail === decodedEmail);
             if (patientEmail) {
                 const query = { patientEmail };
                 const bookings = await bookingCollection.find(query).toArray();
@@ -167,6 +205,32 @@ async function run() {
             const result = await bookingCollection.insertOne(booking);
             res.send({ success: true, result });
         });
+
+        //get all doctors
+        app.get("/doctor", verifyJWT, verifyAdmin, async (req, res) => {
+            const doctors = await doctorCollection.find().toArray();
+            res.send(doctors);
+        });
+
+        //add a new doctor
+        app.post("/doctor", verifyJWT, async (req, res) => {
+            const doctor = req.body;
+            const result = await doctorCollection.insertOne(doctor);
+            res.send(result);
+        });
+
+        //delete a doctor
+        app.delete(
+            "/doctor/:email",
+            verifyJWT,
+            verifyAdmin,
+            async (req, res) => {
+                const email = req.params.email;
+                const filter = { email };
+                const result = await doctorCollection.deleteOne(filter);
+                res.send(result);
+            }
+        );
     } finally {
     }
 }
