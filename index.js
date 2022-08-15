@@ -95,25 +95,25 @@ async function run() {
                 const filter = { email };
                 const exists = await userCollection.findOne(filter);
                 console.log(exists);
-                // if () {
-                //     const updatedDoc = {
-                //         $set: { role: "Admin" },
-                //     };
-                //     const result = await userCollection.updateOne(
-                //         filter,
-                //         updatedDoc
-                //     );
-                //     res.send(result);
-                // } else if () {
-                const updatedDoc = {
-                    $set: { role: "User" },
-                };
-                const result = await userCollection.updateOne(
-                    filter,
-                    updatedDoc
-                );
-                res.send(result);
-                // }
+                if (exists?.role === "User") {
+                    const updatedDoc = {
+                        $set: { role: "Admin" },
+                    };
+                    const result = await userCollection.updateOne(
+                        filter,
+                        updatedDoc
+                    );
+                    res.send(result);
+                } else if (exists?.role === "Admin") {
+                    const updatedDoc = {
+                        $set: { role: "User" },
+                    };
+                    const result = await userCollection.updateOne(
+                        filter,
+                        updatedDoc
+                    );
+                    res.send(result);
+                }
             }
         );
 
