@@ -85,7 +85,7 @@ async function run() {
             res.send({ admin: isAdmin });
         });
 
-        //make admin
+        //make admin / user
         app.put(
             "/user/admin/:email",
             verifyJWT,
@@ -94,7 +94,6 @@ async function run() {
                 const email = req.params.email;
                 const filter = { email };
                 const exists = await userCollection.findOne(filter);
-                console.log(exists);
                 if (exists?.role === "User") {
                     const updatedDoc = {
                         $set: { role: "Admin" },
@@ -120,21 +119,47 @@ async function run() {
         //update a user
         app.put("/user/:email", async (req, res) => {
             const email = req.params.email;
+            const oldUser = await userCollection.findOne({ email });
             const user = req.body;
+            console.log({ ...user });
             const filter = { email };
             const options = { upsert: true };
-            const updatedDoc = {
-                $set: user,
-            };
-            const result = await userCollection.updateOne(
-                filter,
-                updatedDoc,
-                options
-            );
-            const token = jwt.sign({ email }, process.env.ACCESS_TOKEN_SECRET, {
-                expiresIn: "1h",
-            });
-            res.send({ result, token });
+
+            if (oldUser?.role) {
+                const updatedDoc = {
+                    $set: { ...user, role: oldUser?.role },
+                };
+                const result = await userCollection.updateOne(
+                    filter,
+                    updatedDoc,
+                    options
+                );
+                const token = jwt.sign(
+                    { email },
+                    process.env.ACCESS_TOKEN_SECRET,
+                    {
+                        expiresIn: "30d",
+                    }
+                );
+                res.send({ result, token });
+            } else {
+                const updatedDoc = {
+                    $set: { ...user, role: "User" },
+                };
+                const result = await userCollection.updateOne(
+                    filter,
+                    updatedDoc,
+                    options
+                );
+                const token = jwt.sign(
+                    { email },
+                    process.env.ACCESS_TOKEN_SECRET,
+                    {
+                        expiresIn: "30d",
+                    }
+                );
+                res.send({ result, token });
+            }
         });
 
         //delete a user
