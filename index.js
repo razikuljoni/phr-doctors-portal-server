@@ -262,7 +262,7 @@ async function run() {
 run().catch(console.dir);
 
 app.get("/", (req, res) => {
-    res.send("Doctors Portal Running");
+    res.send("Doctors Portal Server Running");
 });
 
 app.listen(port, () => {
